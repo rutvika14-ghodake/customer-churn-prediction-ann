@@ -1,41 +1,37 @@
-
-
-
-
 import os
 import sys
 import gc
-import joblib
-import dill  # <--- ADD THIS IMPORT
-import numpy as np
-import pandas as pd
-from flask import Flask, request, render_template_string
 
-# --- CRITICAL MEMORY OPTIMIZATION FOR RENDER FREE TIER ---
+# 1. OPTIMIZE MEMORY & CPU FOR RENDER (MUST RUN BEFORE TF IMPORT)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'          
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'         
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"         
 
+import joblib
+import dill  # Critical: required for joblib to unpickle custom objects
+import numpy as np
+import pandas as pd
+from flask import Flask, request, render_template_string
 
 gc.enable()
 
 app = Flask(__name__)
 
-# 1. Load transformers using joblib
+# 2. LOAD PREPROCESSING PIPELINES
 with open('categorical_encoder.pkl', 'rb') as f:
     transformer = joblib.load(f)
 
 with open('numerical_scaler.pkl', 'rb') as f:
     scaler = joblib.load(f)
 
-# 2. Import TensorFlow inside a constrained environment context
+# 3. IMPORT TENSORFLOW & LOAD MODEL
 import tensorflow as tf
 tf.config.set_visible_devices([], 'GPU') 
 
 model = tf.keras.models.load_model('ann_model.keras')
 gc.collect()
 
-# 3. Embedded HTML Template
+# 4. EMBEDDED HTML TEMPLATE
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -89,7 +85,7 @@ HTML_TEMPLATE = """
         <p class="subtitle">Enter bank client characteristics below to run prediction matrix</p>
         <form action="/predict" method="POST" class="grid-inputs">
             <div class="input-group"><label>Credit Score</label><input type="number" name="CreditScore" min="300" max="850" value="{{ original_inputs.CreditScore if original_inputs else '600' }}" required></div>
-            <div class="input-group"><label>Geography</label><select name="Geography" required><option value="France" {{ 'selected' if original_inputs and original_inputs.Geography == 'France' }}>France</option><option value="Germany" {{ 'selected' if original_inputs and original_inputs.Germany == 'Germany' }}>Germany</option><option value="Spain" {{ 'selected' if original_inputs and original_inputs.Spain == 'Spain' }}>Spain</option></select></div>
+            <div class="input-group"><label>Geography</label><select name="Geography" required><option value="France" {{ 'selected' if original_inputs and original_inputs.Geography == 'France' }}>France</option><option value="Germany" {{ 'selected' if original_inputs and original_inputs.Geography == 'Germany' }}>Germany</option><option value="Spain" {{ 'selected' if original_inputs and original_inputs.Geography == 'Spain' }}>Spain</option></select></div>
             <div class="input-group"><label>Gender</label><select name="Gender" required><option value="Female" {{ 'selected' if original_inputs and original_inputs.Gender == 'Female' }}>Female</option><option value="Male" {{ 'selected' if original_inputs and original_inputs.Gender == 'Male' }}>Male</option></select></div>
             <div class="input-group"><label>Age</label><input type="number" name="Age" min="18" max="100" value="{{ original_inputs.Age if original_inputs else '40' }}" required></div>
             <div class="input-group"><label>Tenure (Years)</label><input type="number" name="Tenure" min="0" max="10" value="{{ original_inputs.Tenure if original_inputs else '5' }}" required></div>
@@ -141,17 +137,9 @@ def predict():
         }
         input_df = pd.DataFrame(data)
         
-        # NOTE: Adjust transform steps depending on whether 'transformer' is a ColumnTransformer
-        # or standalone OneHotEncoder/LabelEncoder.
-        if hasattr(transformer, 'transform'):
-            processed_data = transformer.transform(input_df)
-        else:
-            processed_data = input_df
-            
-        if hasattr(scaler, 'transform'):
-            final_processed_data = scaler.transform(processed_data)
-        else:
-            final_processed_data = processed_data
+        # Safe transform sequence
+        encoded_data = transformer.transform(input_df) if hasattr(transformer, 'transform') else input_df
+        final_processed_data = scaler.transform(encoded_data) if hasattr(scaler, 'transform') else encoded_data
 
         prediction_prob = model.predict(final_processed_data)
         
