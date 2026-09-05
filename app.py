@@ -124,57 +124,26 @@ def home():
 def favicon():
     return '', 204
 
+# Force TensorFlow to use minimal memory before running
+tf.config.experimental.set_memory_growth = True
+tf.config.threading.set_inter_op_parallelism_threads(1)
+tf.config.threading.set_intra_op_parallelism_threads(1)
+
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
-        # 1. Manual Label Encoding for Gender
-        gender_map = {'Female': 0, 'Male': 1}
-        gender_encoded = gender_map.get(request.form['Gender'], 0)
+        # ... [Your preprocessing logic above] ...
 
-        # 2. Extract inputs
-        credit_score = float(request.form['CreditScore'])
-        geography = request.form['Geography']
-        age = float(request.form['Age'])
-        tenure = float(request.form['Tenure'])
-        balance = float(request.form['Balance'])
-        num_products = float(request.form['NumOfProducts'])
-        has_card = float(request.form['HasCrCard'])
-        is_active = float(request.form['IsActiveMember'])
-        salary = float(request.form['EstimatedSalary'])
+        # Convert final_features directly to float32 numpy array
+        input_data = np.asarray(final_processed_data, dtype=np.float32)
 
-        # 3. Create DataFrame
-        input_df = pd.DataFrame({
-            'CreditScore': [credit_score],
-            'Geography': [geography],
-            'Gender': [gender_encoded],
-            'Age': [age],
-            'Tenure': [tenure],
-            'Balance': [balance],
-            'NumOfProducts': [num_products],
-            'HasCrCard': [has_card],
-            'IsActiveMember': [is_active],
-            'EstimatedSalary': [salary]
-        })
-
-        # 4. Safe Transformations
-        if hasattr(transformer, 'transform'):
-            features = transformer.transform(input_df)
-        else:
-            features = input_df
-
-        if hasattr(scaler, 'transform'):
-            final_features = scaler.transform(features)
-        else:
-            final_features = features
-
-        # 5. Low-Memory Prediction
-        prediction_prob = model.predict(final_features, batch_size=1)
-        
-        # Explicitly clean up memory
-        gc.collect()
+        # Call the underlying Keras model directly (skips heavy predict() overhead)
+        prediction_prob = model(input_data, training=False).numpy()
 
         churn_risk = round(float(prediction_prob[0][0]) * 100, 2)
         will_leave = churn_risk >= 50.0
+
+        gc.collect() # Immediately release memory
 
         return render_template_string(
             HTML_TEMPLATE,
@@ -183,9 +152,7 @@ def predict():
             will_leave=will_leave,
             original_inputs=request.form
         )
-
     except Exception as e:
-        # Prevents 502 by displaying the exact Python error on the UI
         gc.collect()
         return render_template_string(HTML_TEMPLATE, error_text=f"System Error: {str(e)}")
 
