@@ -131,7 +131,7 @@ def predict():
         gender_map = {'Female': 0, 'Male': 1}
         gender_encoded = gender_map.get(request.form['Gender'], 0)
 
-        # 2. Extract and cast all inputs
+        # 2. Extract inputs
         credit_score = float(request.form['CreditScore'])
         geography = request.form['Geography']
         age = float(request.form['Age'])
@@ -142,7 +142,7 @@ def predict():
         is_active = float(request.form['IsActiveMember'])
         salary = float(request.form['EstimatedSalary'])
 
-        # 3. Create DataFrame matching your exact training pipeline
+        # 3. Create DataFrame
         input_df = pd.DataFrame({
             'CreditScore': [credit_score],
             'Geography': [geography],
@@ -156,21 +156,23 @@ def predict():
             'EstimatedSalary': [salary]
         })
 
-        # 4. Safe sequential transformation
-        # Pass input_df through transformer first
+        # 4. Safe Transformations
         if hasattr(transformer, 'transform'):
             features = transformer.transform(input_df)
         else:
             features = input_df
 
-        # Pass through scaler safely
         if hasattr(scaler, 'transform'):
             final_features = scaler.transform(features)
         else:
             final_features = features
 
-        # 5. Predict via Keras model
-        prediction_prob = model.predict(final_features)
+        # 5. Low-Memory Prediction
+        prediction_prob = model.predict(final_features, batch_size=1)
+        
+        # Explicitly clean up memory
+        gc.collect()
+
         churn_risk = round(float(prediction_prob[0][0]) * 100, 2)
         will_leave = churn_risk >= 50.0
 
@@ -181,10 +183,11 @@ def predict():
             will_leave=will_leave,
             original_inputs=request.form
         )
-    except Exception as e:
-        # Prevents 502 errors by rendering the exception gracefully on-screen
-        return render_template_string(HTML_TEMPLATE, error_text=f"Prediction Error: {str(e)}")
 
+    except Exception as e:
+        # Prevents 502 by displaying the exact Python error on the UI
+        gc.collect()
+        return render_template_string(HTML_TEMPLATE, error_text=f"System Error: {str(e)}")
 
 
 if __name__ == '__main__':
