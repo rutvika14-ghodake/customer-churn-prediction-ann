@@ -2,31 +2,32 @@ import os
 import sys
 import gc
 
-# 1. OPTIMIZE MEMORY & CPU FOR RENDER (MUST RUN BEFORE TF IMPORT)
+# 1. ENVIRONMENT VARIABLES & MEMORY LIMITS (MUST RUN BEFORE TF IS IMPORTED)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'          
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'         
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"         
 
 import joblib
-import dill  # Required for joblib to unpickle custom objects
 import numpy as np
 import pandas as pd
 from flask import Flask, request, render_template_string
+
+# 2. IMPORT TENSORFLOW & APPLY PARALLELISM CONFIGS IMMEDIATELY
+import tensorflow as tf
+
+tf.config.threading.set_inter_op_parallelism_threads(1)
+tf.config.threading.set_intra_op_parallelism_threads(1)
 
 gc.enable()
 
 app = Flask(__name__)
 
-# 2. LOAD PREPROCESSING PIPELINES
+# 3. LOAD PREPROCESSING PIPELINES & MODEL
 with open('categorical_encoder.pkl', 'rb') as f:
     transformer = joblib.load(f)
 
 with open('numerical_scaler.pkl', 'rb') as f:
     scaler = joblib.load(f)
-
-# 3. IMPORT TENSORFLOW & LOAD MODEL
-import tensorflow as tf
-tf.config.set_visible_devices([], 'GPU') 
 
 model = tf.keras.models.load_model('ann_model.keras')
 gc.collect()
@@ -124,26 +125,44 @@ def home():
 def favicon():
     return '', 204
 
-# Force TensorFlow to use minimal memory before running
-tf.config.experimental.set_memory_growth = True
-tf.config.threading.set_inter_op_parallelism_threads(1)
-tf.config.threading.set_intra_op_parallelism_threads(1)
-
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
-        # ... [Your preprocessing logic above] ...
+        gender_map = {'Female': 0, 'Male': 1}
+        gender_encoded = gender_map.get(request.form['Gender'], 0)
 
-        # Convert final_features directly to float32 numpy array
-        input_data = np.asarray(final_processed_data, dtype=np.float32)
+        data = {
+            'CreditScore': [float(request.form['CreditScore'])],
+            'Geography': [request.form['Geography']],
+            'Gender': [gender_encoded],
+            'Age': [float(request.form['Age'])],
+            'Tenure': [float(request.form['Tenure'])],
+            'Balance': [float(request.form['Balance'])],
+            'NumOfProducts': [float(request.form['NumOfProducts'])],
+            'HasCrCard': [float(request.form['HasCrCard'])],
+            'IsActiveMember': [float(request.form['IsActiveMember'])],
+            'EstimatedSalary': [float(request.form['EstimatedSalary'])]
+        }
+        input_df = pd.DataFrame(data)
 
-        # Call the underlying Keras model directly (skips heavy predict() overhead)
+        if hasattr(transformer, 'transform'):
+            features = transformer.transform(input_df)
+        else:
+            features = input_df
+
+        if hasattr(scaler, 'transform'):
+            final_features = scaler.transform(features)
+        else:
+            final_features = features
+
+        # Lightweight Direct Model Invocation
+        input_data = np.asarray(final_features, dtype=np.float32)
         prediction_prob = model(input_data, training=False).numpy()
 
         churn_risk = round(float(prediction_prob[0][0]) * 100, 2)
         will_leave = churn_risk >= 50.0
 
-        gc.collect() # Immediately release memory
+        gc.collect()
 
         return render_template_string(
             HTML_TEMPLATE,
@@ -154,8 +173,7 @@ def predict():
         )
     except Exception as e:
         gc.collect()
-        return render_template_string(HTML_TEMPLATE, error_text=f"System Error: {str(e)}")
-
+        return render_template_string(HTML_TEMPLATE, error_text=f"Prediction Error: {str(e)}")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
