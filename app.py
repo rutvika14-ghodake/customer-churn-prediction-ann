@@ -131,33 +131,49 @@ def predict():
         gender_map = {'Female': 0, 'Male': 1}
         gender_encoded = gender_map.get(request.form['Gender'], 0)
 
-        # 2. Build DataFrame matching the exact feature names and types
-        data = {
-            'CreditScore': [float(request.form['CreditScore'])],
-            'Geography': [request.form['Geography']], # String column passed to ColumnTransformer
-            'Gender': [gender_encoded],                # Numeric label-encoded field
-            'Age': [float(request.form['Age'])],
-            'Tenure': [float(request.form['Tenure'])],
-            'Balance': [float(request.form['Balance'])],
-            'NumOfProducts': [float(request.form['NumOfProducts'])],
-            'HasCrCard': [float(request.form['HasCrCard'])],
-            'IsActiveMember': [float(request.form['IsActiveMember'])],
-            'EstimatedSalary': [float(request.form['EstimatedSalary'])]
-        }
-        input_df = pd.DataFrame(data)
+        # 2. Extract and cast all inputs
+        credit_score = float(request.form['CreditScore'])
+        geography = request.form['Geography']
+        age = float(request.form['Age'])
+        tenure = float(request.form['Tenure'])
+        balance = float(request.form['Balance'])
+        num_products = float(request.form['NumOfProducts'])
+        has_card = float(request.form['HasCrCard'])
+        is_active = float(request.form['IsActiveMember'])
+        salary = float(request.form['EstimatedSalary'])
 
-        # 3. Apply ColumnTransformer (handles Geography One-Hot Encoding)
-        encoded_data = transformer.transform(input_df)
+        # 3. Create DataFrame matching your exact training pipeline
+        input_df = pd.DataFrame({
+            'CreditScore': [credit_score],
+            'Geography': [geography],
+            'Gender': [gender_encoded],
+            'Age': [age],
+            'Tenure': [tenure],
+            'Balance': [balance],
+            'NumOfProducts': [num_products],
+            'HasCrCard': [has_card],
+            'IsActiveMember': [is_active],
+            'EstimatedSalary': [salary]
+        })
 
-        # 4. Apply StandardScaler
-        final_processed_data = scaler.transform(encoded_data)
+        # 4. Safe sequential transformation
+        # Pass input_df through transformer first
+        if hasattr(transformer, 'transform'):
+            features = transformer.transform(input_df)
+        else:
+            features = input_df
 
-        # 5. Model Prediction
-        prediction_prob = model.predict(final_processed_data)
-        
+        # Pass through scaler safely
+        if hasattr(scaler, 'transform'):
+            final_features = scaler.transform(features)
+        else:
+            final_features = features
+
+        # 5. Predict via Keras model
+        prediction_prob = model.predict(final_features)
         churn_risk = round(float(prediction_prob[0][0]) * 100, 2)
         will_leave = churn_risk >= 50.0
-        
+
         return render_template_string(
             HTML_TEMPLATE,
             prediction_text="Churn Risk Analysis Complete",
@@ -166,9 +182,8 @@ def predict():
             original_inputs=request.form
         )
     except Exception as e:
-        return render_template_string(HTML_TEMPLATE, error_text=f"An error occurred: {str(e)}")
-
-
+        # Prevents 502 errors by rendering the exception gracefully on-screen
+        return render_template_string(HTML_TEMPLATE, error_text=f"Prediction Error: {str(e)}")
 
 
 
