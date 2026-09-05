@@ -1,16 +1,21 @@
+
+
+
+
 import os
 import sys
+import gc
+import joblib
+import dill  # <--- ADD THIS IMPORT
+import numpy as np
+import pandas as pd
+from flask import Flask, request, render_template_string
 
 # --- CRITICAL MEMORY OPTIMIZATION FOR RENDER FREE TIER ---
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'          
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'         
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"         
 
-from flask import Flask, request, render_template_string
-import numpy as np
-import pandas as pd
-import joblib
-import gc
 
 gc.enable()
 
