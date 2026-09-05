@@ -1,22 +1,32 @@
+import os
+import sys
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+
 from flask import Flask, request, render_template_string
 import numpy as np
 import pandas as pd
 import pickle
-import tensorflow as tf
-import os
+import gc
+
+gc.enable()
 
 app = Flask(__name__)
 
-# 1. Load Preprocessing and Deep Learning Files
 with open('categorical_encoder.pkl', 'rb') as f:
     transformer = pickle.load(f)
 
 with open('numerical_scaler.pkl', 'rb') as f:
     scaler = pickle.load(f)
 
-model = tf.keras.models.load_model('ann_model.keras')
+import tensorflow as tf
+tf.config.set_visible_devices([], 'GPU')
 
-# 2. Embedded HTML Template (Slate Blue & Crisp White Executive Grid Layout)
+model = tf.keras.models.load_model('ann_model.keras')
+gc.collect()
+
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -120,12 +130,13 @@ def predict():
             'IsActiveMember': [float(request.form['IsActiveMember'])],
             'EstimatedSalary': [float(request.form['EstimatedSalary'])]
         }
-        
         input_df = pd.DataFrame(data)
-        processed_data = transformer.transform(input_df)
-        prediction_prob = model.predict(processed_data)
         
-        churn_risk = round(float(prediction_prob[0][0]) * 100, 2)
+        encoded_data = transformer.transform(input_df)
+        final_processed_data = scaler.transform(encoded_data)
+        prediction_prob = model.predict(final_processed_data)
+        
+        churn_risk = round(float(prediction_prob) * 100, 2)
         will_leave = churn_risk >= 50.0
         
         return render_template_string(
@@ -139,5 +150,5 @@ def predict():
         return render_template_string(HTML_TEMPLATE, error_text=f"An error occurred: {str(e)}")
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
