@@ -1,32 +1,36 @@
 import os
 import sys
 
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+# --- CRITICAL MEMORY OPTIMIZATION FOR RENDER FREE TIER ---
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'          
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'         
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"         
 
 from flask import Flask, request, render_template_string
 import numpy as np
 import pandas as pd
-import pickle
+import joblib
 import gc
 
 gc.enable()
 
 app = Flask(__name__)
 
+# 1. FIXED: Load files using joblib instead of standard pickle
 with open('categorical_encoder.pkl', 'rb') as f:
-    transformer = pickle.load(f)
+    transformer = joblib.load(f)
 
 with open('numerical_scaler.pkl', 'rb') as f:
-    scaler = pickle.load(f)
+    scaler = joblib.load(f)
 
+# 2. Import TensorFlow inside a constrained environment context
 import tensorflow as tf
-tf.config.set_visible_devices([], 'GPU')
+tf.config.set_visible_devices([], 'GPU') 
 
 model = tf.keras.models.load_model('ann_model.keras')
 gc.collect()
 
+# 3. Embedded HTML Template
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -150,5 +154,4 @@ def predict():
         return render_template_string(HTML_TEMPLATE, error_text=f"An error occurred: {str(e)}")
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+    port = int(os.environ.get('PORT', 10000))app.run(host='0.0.0.0', port=port)
