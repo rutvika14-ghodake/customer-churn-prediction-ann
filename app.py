@@ -16,7 +16,7 @@ gc.enable()
 
 app = Flask(__name__)
 
-# 1. FIXED: Load files using joblib instead of standard pickle
+# 1. Load transformers using joblib
 with open('categorical_encoder.pkl', 'rb') as f:
     transformer = joblib.load(f)
 
@@ -38,7 +38,7 @@ HTML_TEMPLATE = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bank Customer Churn Predictor</title>
-    <link href="https://googleapis.com" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-gradient: linear-gradient(135deg, #f4f7f6 0%, #e9ecef 100%);
@@ -84,7 +84,7 @@ HTML_TEMPLATE = """
         <p class="subtitle">Enter bank client characteristics below to run prediction matrix</p>
         <form action="/predict" method="POST" class="grid-inputs">
             <div class="input-group"><label>Credit Score</label><input type="number" name="CreditScore" min="300" max="850" value="{{ original_inputs.CreditScore if original_inputs else '600' }}" required></div>
-            <div class="input-group"><label>Geography</label><select name="Geography" required><option value="France" {{ 'selected' if original_inputs and original_inputs.Geography == 'France' }}>France</option><option value="Germany" {{ 'selected' if original_inputs and original_inputs.Geography == 'Germany' }}>Germany</option><option value="Spain" {{ 'selected' if original_inputs and original_inputs.Geography == 'Spain' }}>Spain</option></select></div>
+            <div class="input-group"><label>Geography</label><select name="Geography" required><option value="France" {{ 'selected' if original_inputs and original_inputs.Geography == 'France' }}>France</option><option value="Germany" {{ 'selected' if original_inputs and original_inputs.Germany == 'Germany' }}>Germany</option><option value="Spain" {{ 'selected' if original_inputs and original_inputs.Spain == 'Spain' }}>Spain</option></select></div>
             <div class="input-group"><label>Gender</label><select name="Gender" required><option value="Female" {{ 'selected' if original_inputs and original_inputs.Gender == 'Female' }}>Female</option><option value="Male" {{ 'selected' if original_inputs and original_inputs.Gender == 'Male' }}>Male</option></select></div>
             <div class="input-group"><label>Age</label><input type="number" name="Age" min="18" max="100" value="{{ original_inputs.Age if original_inputs else '40' }}" required></div>
             <div class="input-group"><label>Tenure (Years)</label><input type="number" name="Tenure" min="0" max="10" value="{{ original_inputs.Tenure if original_inputs else '5' }}" required></div>
@@ -136,11 +136,21 @@ def predict():
         }
         input_df = pd.DataFrame(data)
         
-        encoded_data = transformer.transform(input_df)
-        final_processed_data = scaler.transform(encoded_data)
+        # NOTE: Adjust transform steps depending on whether 'transformer' is a ColumnTransformer
+        # or standalone OneHotEncoder/LabelEncoder.
+        if hasattr(transformer, 'transform'):
+            processed_data = transformer.transform(input_df)
+        else:
+            processed_data = input_df
+            
+        if hasattr(scaler, 'transform'):
+            final_processed_data = scaler.transform(processed_data)
+        else:
+            final_processed_data = processed_data
+
         prediction_prob = model.predict(final_processed_data)
         
-        churn_risk = round(float(prediction_prob) * 100, 2)
+        churn_risk = round(float(prediction_prob[0][0]) * 100, 2)
         will_leave = churn_risk >= 50.0
         
         return render_template_string(
@@ -154,4 +164,5 @@ def predict():
         return render_template_string(HTML_TEMPLATE, error_text=f"An error occurred: {str(e)}")
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))app.run(host='0.0.0.0', port=port)
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
