@@ -8,7 +8,7 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"         
 
 import joblib
-import dill  # Critical: required for joblib to unpickle custom objects
+import dill  # Required for joblib to unpickle custom objects
 import numpy as np
 import pandas as pd
 from flask import Flask, request, render_template_string
@@ -120,6 +120,10 @@ HTML_TEMPLATE = """
 def home():
     return render_template_string(HTML_TEMPLATE)
 
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204
+
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
@@ -137,7 +141,6 @@ def predict():
         }
         input_df = pd.DataFrame(data)
         
-        # Safe transform sequence
         encoded_data = transformer.transform(input_df) if hasattr(transformer, 'transform') else input_df
         final_processed_data = scaler.transform(encoded_data) if hasattr(scaler, 'transform') else encoded_data
 
