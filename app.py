@@ -127,10 +127,15 @@ def favicon():
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
+        # 1. Manual Label Encoding for Gender
+        gender_map = {'Female': 0, 'Male': 1}
+        gender_encoded = gender_map.get(request.form['Gender'], 0)
+
+        # 2. Build DataFrame matching the exact feature names and types
         data = {
             'CreditScore': [float(request.form['CreditScore'])],
-            'Geography': [request.form['Geography']],
-            'Gender': [request.form['Gender']],
+            'Geography': [request.form['Geography']], # String column passed to ColumnTransformer
+            'Gender': [gender_encoded],                # Numeric label-encoded field
             'Age': [float(request.form['Age'])],
             'Tenure': [float(request.form['Tenure'])],
             'Balance': [float(request.form['Balance'])],
@@ -140,10 +145,14 @@ def predict():
             'EstimatedSalary': [float(request.form['EstimatedSalary'])]
         }
         input_df = pd.DataFrame(data)
-        
-        encoded_data = transformer.transform(input_df) if hasattr(transformer, 'transform') else input_df
-        final_processed_data = scaler.transform(encoded_data) if hasattr(scaler, 'transform') else encoded_data
 
+        # 3. Apply ColumnTransformer (handles Geography One-Hot Encoding)
+        encoded_data = transformer.transform(input_df)
+
+        # 4. Apply StandardScaler
+        final_processed_data = scaler.transform(encoded_data)
+
+        # 5. Model Prediction
         prediction_prob = model.predict(final_processed_data)
         
         churn_risk = round(float(prediction_prob[0][0]) * 100, 2)
@@ -158,6 +167,10 @@ def predict():
         )
     except Exception as e:
         return render_template_string(HTML_TEMPLATE, error_text=f"An error occurred: {str(e)}")
+
+
+
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
